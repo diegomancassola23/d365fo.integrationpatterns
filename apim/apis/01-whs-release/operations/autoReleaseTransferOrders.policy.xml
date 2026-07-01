@@ -1,0 +1,27 @@
+<!--
+    API 1 - Operation: autoReleaseTransferOrders (OPERATION-LEVEL policy)
+    Routes this specific operation to the D365FO custom service. The Bearer
+    token is already attached by the API-level policy (<base />).
+
+    Client call:   POST {gateway}/d365/whs/autoReleaseTransferOrders
+                   { "_contract": { ...WHSTransferAutoRTWContract fields... } }
+    Backend call:  POST {{d365-resource}}/api/services/WHSServices/WHSReleaseToWarehouseService/autoReleaseTransferOrders
+-->
+<policies>
+    <inbound>
+        <base />
+        <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+        </set-header>
+        <set-backend-service base-url="{{d365-resource}}/api/services/WHSServices/WHSReleaseToWarehouseService" />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

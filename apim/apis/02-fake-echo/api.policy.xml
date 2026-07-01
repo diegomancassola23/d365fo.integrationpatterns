@@ -1,0 +1,21 @@
+<!--
+    API 2 - Fake REST service (JSONPlaceholder)
+    Purpose: demonstrate a plain pass-through REST integration through APIM,
+    fully testable WITHOUT any D365FO / OAuth dependency.
+    Backend: https://jsonplaceholder.typicode.com
+-->
+<policies>
+    <inbound>
+        <base />
+        <set-backend-service base-url="https://jsonplaceholder.typicode.com" />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

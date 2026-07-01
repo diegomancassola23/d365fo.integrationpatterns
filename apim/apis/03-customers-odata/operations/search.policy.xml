@@ -1,0 +1,82 @@
+<!--
+    API 3 - Operation: search (OPERATION-LEVEL policy)
+    REST-to-OData transformation. The caller POSTs a small JSON with a customer
+    code; this operation validates it, flips the request into a D365FO OData GET
+    (auth is inherited from the API-level policy via <base />), and reshapes the
+    verbose OData payload into a compact customer object.
+
+    Client call:   POST {gateway}/d365/customers/search
+                   { "customerAccount": "DE-001" }
+    Backend call:  GET  {{d365-resource}}/data/CustomersV3?cross-company=true&$top=1
+                        &$filter=CustomerAccount eq 'DE-001'
+-->
+<policies>
+    <inbound>
+        <!-- 1) Read + validate the requested customer code (before auth) -->
+        <set-variable name="customerAccount" value="@{ var b = context.Request.Body.As&lt;JObject&gt;(true); return b[&quot;customerAccount&quot;] != null ? (string)b[&quot;customerAccount&quot;] : &quot;&quot;; }" />
+        <choose>
+            <when condition="@(string.IsNullOrEmpty((string)context.Variables[&quot;customerAccount&quot;]))">
+                <return-response>
+                    <set-status code="400" reason="Bad Request" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>{"error":"customerAccount is required in the request body"}</set-body>
+                </return-response>
+            </when>
+        </choose>
+        <!-- 2) Inherit API-level auth (Bearer token + Accept header) -->
+        <base />
+        <!-- 3) Flip the POST into an OData GET towards D365FO -->
+        <set-method>GET</set-method>
+        <set-body>@("")</set-body>
+        <set-header name="Content-Type" exists-action="delete" />
+        <set-backend-service base-url="{{d365-resource}}/data" />
+        <rewrite-uri template="@{ var acc = (string)context.Variables[&quot;customerAccount&quot;]; var filter = System.Uri.EscapeDataString(&quot;CustomerAccount eq '&quot; + acc + &quot;'&quot;); return &quot;/CustomersV3?cross-company=true&amp;$top=1&amp;$filter=&quot; + filter; }" copy-unmatched-params="false" />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+        <!-- 4) Reshape the OData response into a compact customer object -->
+        <choose>
+            <when condition="@(context.Response.StatusCode == 200)">
+                <set-body><![CDATA[@{
+                    var jo = context.Response.Body.As<JObject>();
+                    var arr = jo["value"] as JArray;
+                    if (arr == null || arr.Count == 0) {
+                        return new JObject(new JProperty("found", false)).ToString();
+                    }
+                    var c = (JObject)arr[0];
+                    var result = new JObject(
+                        new JProperty("found", true),
+                        new JProperty("customerAccount", c.Value<string>("CustomerAccount")),
+                        new JProperty("name", c.Value<string>("OrganizationName")),
+                        new JProperty("dataAreaId", c.Value<string>("dataAreaId")),
+                        new JProperty("currency", c.Value<string>("SalesCurrencyCode")),
+                        new JProperty("customerGroup", c.Value<string>("CustomerGroupId")),
+                        new JProperty("paymentTerms", c.Value<string>("PaymentTerms")),
+                        new JProperty("email", c.Value<string>("PrimaryContactEmail")),
+                        new JProperty("phone", c.Value<string>("PrimaryContactPhone")),
+                        new JProperty("address", new JObject(
+                            new JProperty("street", c.Value<string>("AddressStreet")),
+                            new JProperty("city", c.Value<string>("AddressCity")),
+                            new JProperty("zipCode", c.Value<string>("AddressZipCode")),
+                            new JProperty("state", c.Value<string>("AddressState")),
+                            new JProperty("countryRegionId", c.Value<string>("AddressCountryRegionId")),
+                            new JProperty("countryISO", c.Value<string>("AddressCountryRegionISOCode"))
+                        ))
+                    );
+                    return result.ToString();
+                }]]></set-body>
+                <set-header name="Content-Type" exists-action="override">
+                    <value>application/json</value>
+                </set-header>
+            </when>
+        </choose>
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

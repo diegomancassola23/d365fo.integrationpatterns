@@ -1,0 +1,36 @@
+### D365FO Integration Patterns — sample requests
+### Replace the placeholders below, then run with the VS Code REST Client
+### extension (or import into Postman/Insomnia).
+
+@gateway = https://<your-apim-name>.azure-api.net
+@key     = <your-subscription-key>
+
+### API 2 — Fake REST service: get a post (no D365 dependency)
+GET {{gateway}}/fake/posts/1
+Ocp-Apim-Subscription-Key: {{key}}
+
+### API 2 — Fake REST service: list users
+GET {{gateway}}/fake/users
+Ocp-Apim-Subscription-Key: {{key}}
+
+### API 3 — Customers: REST -> OData transformation (happy path)
+POST {{gateway}}/d365/customers/search
+Ocp-Apim-Subscription-Key: {{key}}
+Content-Type: application/json
+
+{ "customerAccount": "DE-001" }
+
+### API 3 — Customers: validation error (missing customerAccount -> 400)
+POST {{gateway}}/d365/customers/search
+Ocp-Apim-Subscription-Key: {{key}}
+Content-Type: application/json
+
+{}
+
+### API 1 — WHS Release to Warehouse (D365FO custom service)
+### Provide a valid WHSTransferAutoRTWContract payload inside "_contract".
+POST {{gateway}}/d365/whs/autoReleaseTransferOrders
+Ocp-Apim-Subscription-Key: {{key}}
+Content-Type: application/json
+
+{ "_contract": { } }

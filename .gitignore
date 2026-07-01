@@ -1,0 +1,20 @@
+# Secrets & local configuration — never commit these
+*.secret
+*.secrets
+*.env
+.env
+.env.*
+local.settings.json
+secrets.json
+*.key
+*.pfx
+
+# Azure CLI / tooling
+.azure/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vs/
+.vscode/
+*.user

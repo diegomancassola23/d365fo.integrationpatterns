@@ -1,0 +1,39 @@
+<!--
+    API 3 - D365FO Customers (REST to OData) : API-LEVEL policy (All operations)
+    Cross-cutting concern shared by every operation of this API: acquire a
+    Microsoft Entra ID access token (OAuth2 client-credentials) and attach it
+    as a Bearer token. The REST->OData transformation lives in the per-operation
+    policy (search).
+
+    Named values (configured in APIM, never stored in Git):
+      {{d365-tenant-id}} {{d365-client-id}} {{d365-client-secret}} {{d365-resource}}
+-->
+<policies>
+    <inbound>
+        <base />
+        <send-request mode="new" response-variable-name="d365TokenResponse" timeout="20" ignore-error="false">
+            <set-url>https://login.microsoftonline.com/{{d365-tenant-id}}/oauth2/v2.0/token</set-url>
+            <set-method>POST</set-method>
+            <set-header name="Content-Type" exists-action="override">
+                <value>application/x-www-form-urlencoded</value>
+            </set-header>
+            <set-body>@("grant_type=client_credentials&client_id={{d365-client-id}}&client_secret={{d365-client-secret}}&scope={{d365-resource}}/.default")</set-body>
+        </send-request>
+        <set-variable name="d365AccessToken" value="@(((IResponse)context.Variables[&quot;d365TokenResponse&quot;]).Body.As&lt;JObject&gt;()[&quot;access_token&quot;].ToString())" />
+        <set-header name="Authorization" exists-action="override">
+            <value>@("Bearer " + (string)context.Variables["d365AccessToken"])</value>
+        </set-header>
+        <set-header name="Accept" exists-action="override">
+            <value>application/json</value>
+        </set-header>
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>
