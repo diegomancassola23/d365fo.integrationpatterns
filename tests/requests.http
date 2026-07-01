@@ -27,10 +27,17 @@ Content-Type: application/json
 
 {}
 
-### API 1 — WHS Release to Warehouse (D365FO custom service)
-### Provide a valid WHSTransferAutoRTWContract payload inside "_contract".
+### API 1 — WHS Release to Warehouse (D365FO custom service + transformation)
+### The policy maps this friendly JSON into the D365FO _contract shape
+### (enum -> int, booleans -> NoYes 0/1). Without a packed query over
+### InventTransferTable, D365FO returns a validation error (expected in the demo).
 POST {{gateway}}/d365/whs/autoReleaseTransferOrders
 Ocp-Apim-Subscription-Key: {{key}}
 Content-Type: application/json
 
-{ "_contract": { } }
+{
+  "quantitySpecification": "All",
+  "allowPartiallyReleased": false,
+  "groupIntoMultipleReleases": false,
+  "packedQuery": ""
+}

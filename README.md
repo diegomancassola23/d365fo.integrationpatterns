@@ -18,7 +18,7 @@ logging and payload persistence**.
 
 | # | API | Pattern | Endpoint (gateway) | Backend |
 |---|-----|---------|--------------------|---------|
-| 1 | **WHS Release to Warehouse** | REST → D365FO **custom service** (OAuth2) | `POST /d365/whs/autoReleaseTransferOrders` | `.../api/services/WHSServices/WHSReleaseToWarehouseService/autoReleaseTransferOrders` |
+| 1 | **WHS Release to Warehouse** | REST → D365FO **custom service** + request transformation (OAuth2) | `POST /d365/whs/autoReleaseTransferOrders` | `.../api/services/WHSServices/WHSReleaseToWarehouseService/autoReleaseTransferOrders` |
 | 2 | **Fake REST service** | Plain **pass-through** REST (no auth) | `GET /fake/posts/{id}`, `GET /fake/users` | `https://jsonplaceholder.typicode.com` |
 | 3 | **Customers (REST → OData)** | **Transformation**: POST → OData GET + response reshape | `POST /d365/customers/search` | `.../data/CustomersV3` |
 
@@ -109,17 +109,40 @@ routing, the REST→OData transformation and response reshaping) lives at the
 
 ## 🔌 The APIs in detail
 
-### API 1 — WHS Release to Warehouse (custom service)
+### API 1 — WHS Release to Warehouse (custom service + request transformation)
 ```http
 POST /d365/whs/autoReleaseTransferOrders
 Ocp-Apim-Subscription-Key: {key}
 Content-Type: application/json
 
-{ "_contract": { /* WHSTransferAutoRTWContract fields */ } }
+{
+  "quantitySpecification": "All",          // All | ReservedPhysically | ReservedPhysicallyAndCrossDock
+  "allowPartiallyReleased": false,
+  "groupIntoMultipleReleases": false,
+  "packedQuery": ""                        // optional packed query over InventTransferTable
+}
 ```
-The D365FO operation `autoReleaseTransferOrders` takes a single `_contract`
-parameter (`WHSTransferAutoRTWContract`) and returns `Void`. The caller's body is
-forwarded as-is after the Bearer token is attached.
+The D365FO operation `autoReleaseTransferOrders` expects a single `_contract`
+parameter (`WHSTransferAutoRTWContract`) whose members are typed X++ values — the
+release-quantity is an **enum** (integer) and the two flags are **NoYes** (0/1).
+Rather than leak that shape to consumers, the policy accepts the friendly JSON
+above and **transforms** it into the contract D365FO wants:
+
+```json
+{
+  "_contract": {
+    "WHSReleaseQuantitySpecification": 0,
+    "AllowPartiallyReleased": 0,
+    "GroupIntoMultipleReleases": 0,
+    "_packedQuery": ""
+  }
+}
+```
+
+> Demo note: the service ultimately needs a *packed query* over `InventTransferTable`
+> to actually release orders. Without it, D365FO returns a validation error — which
+> is expected here. The point of this API is to show the APIM request transformation
+> and OAuth2 routing, not to run a real warehouse release.
 
 ### API 2 — Fake REST service (pass-through)
 ```http

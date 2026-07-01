@@ -1,11 +1,35 @@
 <!--
     API 1 - Operation: autoReleaseTransferOrders (OPERATION-LEVEL policy)
-    Routes this specific operation to the D365FO custom service. The Bearer
-    token is already attached by the API-level policy (<base />).
 
-    Client call:   POST {gateway}/d365/whs/autoReleaseTransferOrders
-                   { "_contract": { ...WHSTransferAutoRTWContract fields... } }
-    Backend call:  POST {{d365-resource}}/api/services/WHSServices/WHSReleaseToWarehouseService/autoReleaseTransferOrders
+    Demonstrates a REQUEST TRANSFORMATION: the caller posts a small, friendly
+    JSON; the policy maps it into the exact contract shape the D365FO custom
+    service expects (enum names -> integer values, booleans -> NoYes 0/1) and
+    routes the call. The Bearer token is added by the API-level policy (<base />).
+
+    Simplified request (what the consumer sends):
+        POST {gateway}/d365/whs/autoReleaseTransferOrders
+        {
+          "quantitySpecification": "All",          // All | ReservedPhysically | ReservedPhysicallyAndCrossDock
+          "allowPartiallyReleased": false,
+          "groupIntoMultipleReleases": false,
+          "packedQuery": ""                        // optional packed query over InventTransferTable
+        }
+
+    Transformed body sent to D365FO:
+        POST {{d365-resource}}/api/services/WHSServices/WHSReleaseToWarehouseService/autoReleaseTransferOrders
+        {
+          "_contract": {
+            "WHSReleaseQuantitySpecification": 0,
+            "AllowPartiallyReleased": 0,
+            "GroupIntoMultipleReleases": 0,
+            "_packedQuery": ""
+          }
+        }
+
+    NOTE (demo): the service ultimately needs a *packed query* on InventTransferTable
+    to actually release orders; without it D365FO returns a validation error. That is
+    expected here — the goal is to demonstrate the APIM transformation, not to run a
+    real warehouse release.
 -->
 <policies>
     <inbound>
@@ -14,6 +38,27 @@
             <value>application/json</value>
         </set-header>
         <set-backend-service base-url="{{d365-resource}}/api/services/WHSServices/WHSReleaseToWarehouseService" />
+        <set-body><![CDATA[@{
+            var req = context.Request.Body.As<JObject>();
+            var qsName = req["quantitySpecification"] != null ? (string)req["quantitySpecification"] : "All";
+            int qs;
+            switch (qsName)
+            {
+                case "ReservedPhysically": qs = 1; break;
+                case "ReservedPhysicallyAndCrossDock": qs = 2; break;
+                default: qs = 0; break;
+            }
+            bool allowPartial = req["allowPartiallyReleased"] != null && (bool)req["allowPartiallyReleased"];
+            bool groupMultiple = req["groupIntoMultipleReleases"] != null && (bool)req["groupIntoMultipleReleases"];
+            string packedQuery = req["packedQuery"] != null ? (string)req["packedQuery"] : "";
+            var contract = new JObject(
+                new JProperty("WHSReleaseQuantitySpecification", qs),
+                new JProperty("AllowPartiallyReleased", allowPartial ? 1 : 0),
+                new JProperty("GroupIntoMultipleReleases", groupMultiple ? 1 : 0),
+                new JProperty("_packedQuery", packedQuery)
+            );
+            return new JObject(new JProperty("_contract", contract)).ToString();
+        }]]></set-body>
     </inbound>
     <backend>
         <base />
