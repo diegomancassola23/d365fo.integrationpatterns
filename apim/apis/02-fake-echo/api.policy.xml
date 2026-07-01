@@ -1,12 +1,45 @@
 <!--
-    API 2 - Fake REST service (JSONPlaceholder)
-    Purpose: demonstrate a plain pass-through REST integration through APIM,
-    fully testable WITHOUT any D365FO / OAuth dependency.
+    API 2 - Fake REST service (JSONPlaceholder) : API-LEVEL policy (All operations)
+
+    This API has NO D365 dependency on purpose: it is the perfect canvas to show
+    what an APIM gateway adds ON TOP of any backend, even a plain public REST API.
+    Each block below maps to one of the gateway benefits called out in the article
+    (standardize communication, centralize security, decouple, observe):
+
+      1) CORS             -> browsers can call it directly, centrally governed
+      2) Correlation ID   -> every call is traceable end-to-end (logs + response)
+      3) Header hardening -> backend fingerprinting headers are stripped
+      4) Response tagging  -> gateway metadata added without touching the backend
+      5) Error envelope   -> a single, consistent error shape for consumers
+
+    NOTE: on Basic/Standard/Premium you would also add rate limiting here, e.g.
+      <rate-limit-by-key calls="20" renewal-period="60"
+                         counter-key="@(context.Request.IpAddress)" />
+    That policy is not available in the Consumption tier, so it is omitted.
+
     Backend: https://jsonplaceholder.typicode.com
 -->
 <policies>
     <inbound>
         <base />
+        <!-- 1) Centralized CORS -->
+        <cors allow-credentials="false">
+            <allowed-origins>
+                <origin>*</origin>
+            </allowed-origins>
+            <allowed-methods>
+                <method>GET</method>
+                <method>OPTIONS</method>
+            </allowed-methods>
+            <allowed-headers>
+                <header>*</header>
+            </allowed-headers>
+        </cors>
+        <!-- 2) Ensure every request carries a correlation id (create one if absent) -->
+        <set-variable name="correlationId" value="@(context.Request.Headers.GetValueOrDefault(&quot;x-correlation-id&quot;, Guid.NewGuid().ToString()))" />
+        <set-header name="x-correlation-id" exists-action="override">
+            <value>@((string)context.Variables["correlationId"])</value>
+        </set-header>
         <set-backend-service base-url="https://jsonplaceholder.typicode.com" />
     </inbound>
     <backend>
@@ -14,8 +47,42 @@
     </backend>
     <outbound>
         <base />
+        <!-- 4) Strip backend fingerprinting headers -->
+        <set-header name="Server" exists-action="delete" />
+        <set-header name="X-Powered-By" exists-action="delete" />
+        <set-header name="Via" exists-action="delete" />
+        <!-- 5) Tag the response with gateway metadata (no backend change required) -->
+        <set-header name="x-correlation-id" exists-action="override">
+            <value>@((string)context.Variables["correlationId"])</value>
+        </set-header>
+        <set-header name="X-Gateway" exists-action="override">
+            <value>Azure API Management</value>
+        </set-header>
+        <set-header name="X-Gateway-Elapsed-Ms" exists-action="override">
+            <value>@(((long)context.Elapsed.TotalMilliseconds).ToString())</value>
+        </set-header>
+        <set-header name="Cache-Control" exists-action="override">
+            <value>no-store</value>
+        </set-header>
     </outbound>
     <on-error>
         <base />
+        <!-- 6) One consistent error envelope for consumers -->
+        <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+        </set-header>
+        <set-header name="x-correlation-id" exists-action="override">
+            <value>@(context.Variables.ContainsKey("correlationId") ? (string)context.Variables["correlationId"] : "")</value>
+        </set-header>
+        <set-body><![CDATA[@{
+            var cid = context.Variables.ContainsKey("correlationId") ? (string)context.Variables["correlationId"] : "";
+            return new JObject(
+                new JProperty("error", new JObject(
+                    new JProperty("message", context.LastError != null ? context.LastError.Message : "Unexpected error"),
+                    new JProperty("source", context.LastError != null ? context.LastError.Source : ""),
+                    new JProperty("correlationId", cid)
+                ))
+            ).ToString();
+        }]]></set-body>
     </on-error>
 </policies>

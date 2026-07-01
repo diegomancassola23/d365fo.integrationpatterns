@@ -19,14 +19,16 @@ logging and payload persistence**.
 | # | API | Pattern | Endpoint (gateway) | Backend |
 |---|-----|---------|--------------------|---------|
 | 1 | **WHS Release to Warehouse** | REST → D365FO **custom service** + request transformation (OAuth2) | `POST /d365/whs/autoReleaseTransferOrders` | `.../api/services/WHSServices/WHSReleaseToWarehouseService/autoReleaseTransferOrders` |
-| 2 | **Fake REST service** | Plain **pass-through** REST (no auth) | `GET /fake/posts/{id}`, `GET /fake/users` | `https://jsonplaceholder.typicode.com` |
+| 2 | **Fake REST service** | Gateway **value-add** showcase (CORS, correlation, hardening, error envelope) | `GET /fake/posts/{id}`, `GET /fake/users` | `https://jsonplaceholder.typicode.com` |
 | 3 | **Customers (REST → OData)** | **Transformation**: POST → OData GET + response reshape | `POST /d365/customers/search` | `.../data/CustomersV3` |
 
 ### Why these three?
 - **API 1** shows the *process integration* case: a real-time call into a D365FO
   X++ custom service, with the gateway handling Microsoft Entra ID authentication.
 - **API 2** is a dependency-free reference you can call immediately to validate the
-  gateway, logging and subscription-key flow — no D365 environment required.
+  gateway, logging and subscription-key flow — no D365 environment required. Its
+  policy also showcases the gateway value-adds (CORS, correlation IDs, header
+  hardening, response tagging, a consistent error envelope) on a plain backend.
 - **API 3** shows the *transformation* case: hide OData syntax from consumers.
   The caller posts a simple `{ "customerAccount": "DE-001" }`; APIM flips it into a
   D365FO OData query and returns a **compact, curated JSON** with only the main fields.
@@ -144,13 +146,36 @@ above and **transforms** it into the contract D365FO wants:
 > is expected here. The point of this API is to show the APIM request transformation
 > and OAuth2 routing, not to run a real warehouse release.
 
-### API 2 — Fake REST service (pass-through)
+### API 2 — Fake REST service (gateway value-add showcase)
 ```http
 GET /fake/posts/1
 GET /fake/users
 Ocp-Apim-Subscription-Key: {key}
 ```
-No D365 dependency — ideal for smoke-testing the gateway and logging.
+No D365 dependency — this API exists to show what the gateway adds **on top of any
+backend**. Its policy layers on, without touching the backend:
+
+- **CORS** — centrally governed cross-origin access.
+- **Correlation ID** — `x-correlation-id` is honored if the caller sends one, or
+  generated otherwise, then echoed back on the response (and logged) for
+  end-to-end tracing.
+- **Header hardening** — backend fingerprinting headers (`Server`, `X-Powered-By`,
+  `Via`) are stripped from the response.
+- **Response tagging** — `X-Gateway` and `X-Gateway-Elapsed-Ms` are added so callers
+  can see the request went through APIM and how long it took.
+- **Consistent error envelope** — any failure is returned as a single JSON shape
+  `{ "error": { "message", "source", "correlationId" } }`.
+
+On paid tiers you would also add **rate limiting** here (`rate-limit-by-key`); it is
+not available in the Consumption tier, so it is documented in the policy but omitted.
+
+Example — the response carries the gateway headers:
+```
+x-correlation-id: 469e3d24-357d-437a-b4fe-0f30b325b25c
+X-Gateway: Azure API Management
+X-Gateway-Elapsed-Ms: 1234
+Cache-Control: no-store
+```
 
 ### API 3 — Customers, REST → OData transformation
 ```http

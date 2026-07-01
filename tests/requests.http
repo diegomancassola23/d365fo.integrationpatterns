@@ -6,12 +6,15 @@
 @key     = <your-subscription-key>
 
 ### API 2 — Fake REST service: get a post (no D365 dependency)
+### Inspect the response headers: x-correlation-id, X-Gateway, X-Gateway-Elapsed-Ms
+### are added by APIM; Server / X-Powered-By from the backend are stripped.
 GET {{gateway}}/fake/posts/1
 Ocp-Apim-Subscription-Key: {{key}}
 
-### API 2 — Fake REST service: list users
+### API 2 — Fake REST service: pass your own correlation id (it is echoed back)
 GET {{gateway}}/fake/users
 Ocp-Apim-Subscription-Key: {{key}}
+x-correlation-id: my-trace-123
 
 ### API 3 — Customers: REST -> OData transformation (happy path)
 POST {{gateway}}/d365/customers/search
